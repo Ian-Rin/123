@@ -1,0 +1,502 @@
+---
+title: "DATA1001 Project 1 Assessment"
+author: "Aiden Balshaw, Mathis Limpkin, Ryohei Takahashi, Hanmo Li, Rahul Desai,
+Jun Xiang"
+format: 
+  html:
+    embed-resources: true
+    toc: true
+    code-fold: true
+    
+---
+# Data Project 1
+
+## Executive Summary 
+This report explores the student university lifestyle of students across a range of countries of birth. Through analysis it was revealed that there is significant change in intended hours study across count ire of birth but no change for friend count. Our research shows a weak correlation between stress levels and hours studied with no variation among birth countries. 
+
+
+
+## Exploratory Data Anaylasis 
+### Source
+The data was sourced from a survey examining 29 variables and was completed by 6504 respondents from the DATA1001/1901 cohorts.
+
+### Structure
+- Country of birth – Qualitative (nominal)
+- Number of friends at USyd (`friends_count`) – Quantitative (discrete)
+- Intended hours of study per week (`hours_studying`) – Quantitative (continuous)
+- Self-reported stress level (`stress`) – Quantitative
+
+### Limitations
+The data is self-reported, so some responses may be inaccurate or inconsistent. The number of responses is not equal across countries of birth, which may affect the reliability of comparisons between groups. For Research Question 1, very large `friends_count` values may distort the graph and summary statistics. Additionally, as the data is observational and collected at one point in time, it shows associations only and cannot prove causation.
+
+### Assumptions
+We assumed that respondents answered the survey honestly and interpreted the questions in a similar way. We also assumed that `friends_count` is a reasonable proxy for one aspect of students’ university experience. 
+
+### Data cleaning
+For the analysis, only respondents who gave consent were retained. The dataset was then reduced to the variables relevant to the research questions: `country_of_birth`, `friends_count`, `hours_studying`, and `stress`. Rows with missing values in these selected variables were removed. Implausibly large values in `friends_count` were excluded, as they were likely to distort the visualizations and summary statistics.
+
+```{r, warning = FALSE, message = FALSE}
+library(tidyverse)
+library(plotly)
+
+# =========================
+# 2. Import dataset
+# =========================
+
+data <- read.csv("data1001_survey_data_2026S1-1.csv")
+
+# =========================
+# 3. Data cleaning
+# =========================
+survey <- data |>
+  filter(consent == "I consent to take part in the study") |>
+  select(country_of_birth, hours_studying, friends_count, lecture_mode, stress, country_of_birth_5_TEXT) |>
+  drop_na()
+```
+
+## Research Question 1
+
+### How does a students country of birth effect their student lifestyle?
+
+```{r, results='asis'}
+# =========================
+# 4. Simplify country groups
+# =========================
+survey <- survey |>
+  mutate(country_group = case_when(
+    country_of_birth == "Australia" ~ "Australia",
+    country_of_birth == "China" ~ "China",
+    country_of_birth == "India" ~ "India",
+    country_of_birth == "USA" ~ "USA",
+    TRUE ~ "Other"
+  ))
+
+data_summary <- survey |>
+  group_by(country_group) |>
+  count(country_group, name = "Number of Students")
+
+knitr::kable(
+  data_summary,
+  col.names = c("Country", "Number of Students"),
+  align     = c("l", "r"),
+  caption   = "Table 1: Number of students per country group"
+)
+  
+```
+```{r}
+survey <- survey |>
+  filter(!is.na(hours_studying)) |>
+  group_by(country_group) |>
+  mutate(
+    Q1 = quantile(hours_studying,0.25),
+    Q3 = quantile(hours_studying,0.75),
+    IQR = Q3 - Q1,
+    LT = Q1 - 1.5*IQR,
+    UT = Q3 + 1.5*IQR
+  ) |> 
+  filter(hours_studying >= LT & hours_studying <= UT) |>
+  ungroup()
+
+p1 <- ggplot(survey, aes(x = country_group, y = hours_studying)) + 
+  geom_boxplot(fill = "lightgreen", color = "black", outlier.shape = NA) + 
+  labs(title = "Figure 1.1 Study Hours by Country of Birth",
+       x = "Country of Birth",
+       y = "Hours Studying per Week") + 
+  theme_minimal()
+
+ggplotly(p1)
+```
+```{r}
+survey <- survey |>
+  filter(!is.na(friends_count)) |>
+  group_by(country_group) |>
+  mutate(
+    Q1 = quantile(friends_count,0.25),
+    Q3 = quantile(friends_count,0.75),
+    IQR = Q3 - Q1,
+    LT = Q1 - 1.5 * IQR,
+    UT = Q3 + 1.5 * IQR
+  ) |>
+  filter(friends_count >= LT & friends_count <= UT) |>
+  ungroup()
+
+p2 = ggplot(survey, aes(x = country_group, y = friends_count)) +
+  geom_boxplot(fill = "pink",color = "black",outlier.shape = NA) +
+  labs(title = "Figure 1.2 Friends Count by Country",
+       x = "Country of Birth",
+       y = "Friends Count") +
+  theme_minimal()
+
+ggplotly(p2)
+```
+
+### Research Question 1 Analysis
+Figure 1.1 reveals significant variations in both median values and interquartile ranges across the different country groups. The country with the highest median and IQR was China, with a median of 5.00 and an IQR of 4.00, showing a higher central tendency and greater variability in study hours compared to other groups. The USA had the lowest IQR of 1.00 and a median of 3.00. Furthermore, the distributions for India and the countries classified as 'Other' were remarkably similar, sharing the same median of 4.00. Overall, students from China appear to study longer hours compared to those from other countries, whereas students from Australia and the USA are more likely to spend fewer hours studying.
+
+Figure 1.2 illustrates a similar distribution across country groups in terms of median, IQR, and range. With the exception of China, all country groups had an identical IQR of 7.00. Notably, Australia and India share exactly the same distribution, with a median of 5.00. China also had a median of 5.50; however, its distribution is notably right-skewed, with a smaller IQR of 5.50 and a lower maximum value of 17.00. The highest median was recorded for the USA at 6.50. Overall, the data suggests that country of birth does not significantly impact the number of friends a student has.
+
+
+## Research Question 2 
+### Is there a linear relationship between hours studyingand stress level among students at USyd and how may this relationship vary across different countries of birth?
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(plotly)
+
+# loading in dataset 
+survey_dirty = read.csv("data1001_survey_data_2026S1-1.csv")
+
+# cleaning extracts 
+  survey = drop_na(survey_dirty)
+
+# extracting relevant columns 
+relevant_data = subset(
+  survey, 
+  select = c(
+              hours_studying, 
+              friends_count, stress, 
+              country_of_birth, 
+              country_of_birth_5_TEXT
+             )
+  )
+```
+
+```
+
+```{r}
+library(dbplyr)
+# seperating data by country (vector)
+country_group <- case_when(
+  survey$country_of_birth == "Australia" ~ "Australia",
+  survey$country_of_birth == "China" ~ "China",
+  survey$country_of_birth == "India" ~ "India",
+  survey$country_of_birth == "USA" ~ "USA",
+  TRUE ~ "Other"
+)
+# adding country vector into filtered dataset
+survey$country_group <- country_group
+countries <- unique(country_group)
+# highest degree polynomial being tested 
+degree <- 5
+# Storing results (empty)
+results = matrix(
+  data = NA, 
+  nrow = length(countries), 
+  ncol = degree, 
+  dimnames = list(countries, 
+                  paste0("deg", 1:degree)
+                  )
+  )
+# K fold cross validation (for individual countries only)
+# filter and shuffle data
+for (c in countries) {
+  data_c <- survey %>% filter(country_group == c)
+  data_c <- data_c[sample(nrow(data_c)), ]
+  
+  # number of folds for k fold verification (adjusted based on sample size)
+  k <- min(10, floor(nrow(data_c) / 2))
+  # Creating equal sized folds 
+  folds <- cut(seq(1, nrow(data_c)), breaks = k, labels = FALSE)
+  
+  # storing results p2 
+  mse <- matrix(NA, nrow = k, ncol = degree)
+  # Perform cross validation 
+  for(i in 1:k){
+    
+    # define training and test data 
+    testIndexes <- which(folds == i)
+    testData <- data_c[testIndexes, ]
+    trainData <- data_c[-testIndexes, ]
+    
+    # using k-fold cv to evaluate models 
+    for (j in 1:degree){
+      
+      if (length(unique(trainData$hours_studying)) <= j) next
+      
+      tryCatch({
+        fit.train = lm(stress ~ poly(hours_studying, j, raw = TRUE), # ✅ FIX: raw=TRUE keeps full x range
+                       data = trainData)
+        fit.test = predict(fit.train, newdata = testData)
+        mse[i, j] = mean((fit.test-testData$stress)^2)
+      }, error = function(e) NULL)
+    }
+    
+  }
+  results[c, ] <- colMeans(mse, na.rm = TRUE)
+}
+
+# getting equations of the polynomials 
+# optimal degree
+optimal_degree <- apply(results, 1, which.min)
+# applying degree to each country 
+models <- list()
+for (c in countries) {
+  data_c <- survey %>% filter(country_group == c)
+  d <- optimal_degree[c]
+  models[[c]] <- lm(stress ~ poly(hours_studying, d, raw = TRUE), data = data_c)
+}
+# Global model 
+global_mse <- rep(NA, degree)
+for (j in 1:degree) {
+  fit <- lm(stress ~ poly(hours_studying, j, raw = TRUE), data = survey)
+  
+  preds <- predict(fit, newdata = survey)
+  global_mse[j] <- mean((preds - survey$stress)^2)
+}
+global_degree <- which.min(global_mse)
+global_model <- lm(
+  stress ~ poly(hours_studying, global_degree, raw = TRUE),
+  data = survey
+)
+
+```
+
+
+
+
+
+
+```{r}
+library(plotly)
+
+# sorting to have only countries with valid models 
+countries <- names(models)
+
+# traces setup (stores plots, layer count, labels type and group) 
+traces      <- list()
+trace_type  <- c()
+trace_group <- c()
+
+# helper function to toggle vissibilities of traces 
+get_visibility <- function(selected_group, selected_type) {
+  result <- mapply(function(type, group) {
+    (group == selected_group) && (type %in% selected_type)
+  }, trace_type, trace_group)
+  as.list(unname(result))
+}
+
+# All Traces 
+
+# determining scatter plots 
+traces[[length(traces) + 1]] <- list(
+  x = survey$hours_studying, y = survey$stress,
+  type = "scatter", mode = "markers",
+  name = "All points", visible = TRUE
+)
+trace_type  <- c(trace_type,  "point")
+trace_group <- c(trace_group, "ALL")
+
+# uses model to calculate points on the line (length.out = 200 so 200 points on line calc)
+xseq_all  <- seq(min(survey$hours_studying), max(survey$hours_studying), length.out = 200)
+preds_all <- predict(global_model, newdata = data.frame(hours_studying = xseq_all))
+
+# uses line above calculations to create the trend line/polynomial
+traces[[length(traces) + 1]] <- list(
+  x = xseq_all, y = preds_all,
+  type = "scatter", mode = "lines",
+  name = "All fit", visible = TRUE
+)
+trace_type  <- c(trace_type,  "line")
+trace_group <- c(trace_group, "ALL")
+
+# calculates and plots residuals 
+traces[[length(traces) + 1]] <- list(
+  x = survey$hours_studying, y = residuals(global_model),
+  type = "scatter", mode = "markers",
+  name = "All residuals", visible = FALSE, showlegend = FALSE
+)
+trace_type  <- c(trace_type,  "residual")
+trace_group <- c(trace_group, "ALL")
+
+# Per-country traces
+
+for (ctry in countries) {
+  
+  data_c <- survey %>% filter(country_group == ctry)
+  
+  # ✅ FIX: use full survey range so x axis always goes to 60, not just country subset range
+  xseq   <- seq(min(survey$hours_studying), max(survey$hours_studying), length.out = 200)
+  preds  <- unname(predict(models[[ctry]], newdata = data.frame(hours_studying = xseq)))
+
+  # scatter points
+  traces[[length(traces) + 1]] <- list(
+    x = data_c$hours_studying, y = data_c$stress,
+    type = "scatter", mode = "markers",
+    name = paste(ctry, "points"), visible = FALSE
+  )
+  trace_type  <- c(trace_type,  "point")
+  trace_group <- c(trace_group, ctry)
+
+  # trend line
+  traces[[length(traces) + 1]] <- list(
+    x = xseq, y = preds,
+    type = "scatter", mode = "lines",
+    name = paste(ctry, "fit"), visible = FALSE
+  )
+  trace_type  <- c(trace_type,  "line")
+  trace_group <- c(trace_group, ctry)
+
+  # residuals 
+  traces[[length(traces) + 1]] <- list(
+    x = data_c$hours_studying, y = residuals(models[[ctry]]),
+    type = "scatter", mode = "markers",
+    name = paste(ctry, "residuals"), visible = FALSE, showlegend = FALSE
+  )
+  trace_type  <- c(trace_type,  "residual")
+  trace_group <- c(trace_group, ctry)
+}
+
+# Dropdown toggleables (all and per country residual or poly)
+
+all_poly_button <- list(
+  method = "restyle",
+  args   = list("visible", get_visibility("ALL", c("point", "line"))),
+  label  = "ALL - Poly"
+)
+
+all_residual_button <- list(
+  method = "restyle",
+  args   = list("visible", get_visibility("ALL", "residual")),
+  label  = "ALL - Residual"
+)
+
+country_poly_button <- lapply(countries, function(ctry) {
+  list(
+    method = "restyle",
+    args   = list("visible", get_visibility(ctry, c("point", "line"))),
+    label  = paste(ctry, "- Poly")
+  )
+})
+
+country_residual_button <- lapply(countries, function(ctry) {
+  list(
+    method = "restyle",
+    args   = list("visible", get_visibility(ctry, "residual")),
+    label  = paste(ctry, "- Residual")
+  )
+})
+
+# fix dropdown order so poly and residual of same country are next to each other 
+country_buttons_interleaved <- unlist(
+  mapply(function(p, r) list(p, r),
+         country_poly_button, country_residual_button,
+         SIMPLIFY = FALSE),
+  recursive = FALSE
+)
+
+buttons <- c(list(all_poly_button), list(all_residual_button), country_buttons_interleaved)
+
+# Building graph
+
+fig <- plot_ly()
+for (t in traces) {
+  fig <- do.call(add_trace, c(list(fig), t))
+}
+
+fig <- layout(
+  fig,
+  title  = "Stress vs Hours Studying",
+  xaxis  = list(title = "Hours Studying"),
+  yaxis  = list(title = "Amount of Stress"),
+  legend = list(y = 0.8),
+
+  # residual graph line 
+  shapes = list(
+    list(
+      type = "line",
+      x0   = min(survey$hours_studying),
+      x1   = max(survey$hours_studying),
+      y0 = 0, y1 = 0,
+      line = list(dash = "dash", width = 2)
+    )
+  ),
+
+  updatemenus = list(
+    list(
+      type    = "dropdown",
+      x       = 0.0,
+      y       = 1.15,
+      xanchor = "left",
+      buttons = buttons
+    )
+  )
+)
+
+fig
+```
+### Research Question 2 Analysis
+Our analysis reveals a non-linear correlation between hours of studying and stress levels among students, but also demonstrates weak positive correlations between the two variables when subdivided by country of birth. The two variables have a correlation coefficient of 0.067; the residual plot consists of repeating parallel lines of negative slope, and the variance of data points in the residual plot's vertical strips is not consistent. Thus, with a low correlation coefficient and neither randomness nor homoscedasticity in the residual plot, the two variables do NOT fit a linear model. A study by Rahim et al. (2016) supports our findings, reporting a weak positive correlation between stress levels and hours studied (r = 0.062) among biomedical science students in Kuala Lumpur, and concluding that stress levels are likely impacted by other factors such as personal problems. However, Gallardo-Lolandes et al. (2020) raises an important nuance. They found an inverse relationship between time management and academic stress, highlighting that it is not the intended hours studied, but rather how this time is managed, that influences stress levels. 
+
+## Articles 
+
+Gallardo-Lolandes, Y., Alcas-Zapata, N. , Flores, J. E. A., & Ocaña-Fernández, Y. (2020). Time management and academic stress in Lima university students. International Journal of Higher Education, 9(9), 32–40.
+
+Rahim, A. F., Saat, N. Z. M., & Arshad, S. A. (2016). Relationship between stress and academic performance among students. Journal of Applied Sciences, 16(3), 108-112 https://scialert.net/fulltext/?doi=jas.2016.108.112
+
+
+## Acknowledgements 
+
+### List of Group Meetings:
+1pm - 2pm on 25/3/2026
+Attendees: Aiden Balshaw, Mathis Limpkin, Hanmo Li, Jun Xiang, Ryohei Takahashi,
+Rahul Desai
+
+1pm - 2pm on, 1/4/2026
+Attendees: Mathis Limpkin, Aiden Balshaw 
+
+### Group Contributions:
+Executive Summary: Aiden Balshaw
+
+EDA: Jun Xiang
+
+RQ1: Graph + Analysis: Ryohei Takahashi, Hanmo Li
+
+RQ2: Graph + Analysis: Mathis Limpkin, Rahul Desai 
+
+Articles: Aiden Balshaw
+
+Acknowledgements: Aiden Balshaw
+
+Formatting: Aiden Balshaw
+
+Presentation: Aiden Balshaw, Rahul Desai
+
+### Resources Used: 
+Changjun Lee: https://changjunlee.com/blogs/posts/6_interactive_graph.html
+
+Stack Overflow: https://stackoverflow.com/questions/66109378/adding-multiple-sliders-to-the-same-graph
+
+Plotly: https://plotly.com/r/sliders/
+
+Google Groups: https://groups.google.com/g/ggplot2/c/qN9n83rvcLk?pli=1
+
+Statology: https://www.statology.org/polynomial-regression-r/
+
+Plotly: https://plotly.com/r/line-and-scatter/
+
+Plotly: https://plotly.com/r/dropdowns/
+
+Plotly: https://plotly.com/r/custom-buttons/
+
+R Documentation: https://stat.ethz.ch/R-manual/R-devel/
+
+Statology: https://www.statology.org/k-fold-cross-validation-in-r/
+
+### AI Usage Statement
+
+GPT 5.4, Open Ai, https://chatgpt.com/,
+Tasks:
+EDA Grammar checking 
+Choosing correct graph for students against friend count 
+and students against hours studied 
+Sonnet 4.1, Anthropic, https://claude.ai/chat/
+Tasks: 
+Interactive Graph troubleshooting/ problem walk through 
+Code debugging walk through
+Finding articles related to stress and study for university students
+
+
+
+## Proffesional Standard of Report
+The shared value of respect was upheld in our analysis, as data was collected with anonymity, and data cleaning ensures results are not misleading in the analysis and visualizations. The ethical principles of exposing and reviewing methods and findings were adhered to during this project, as all use of articles and AI tools is transparent to the public.
