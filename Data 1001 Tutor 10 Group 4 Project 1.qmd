@@ -52,13 +52,7 @@ survey <- data |>
   filter(consent == "I consent to take part in the study") |>
   select(country_of_birth, hours_studying, friends_count, lecture_mode, stress, country_of_birth_5_TEXT) |>
   drop_na()
-```
 
-## Research Question 1
-
-### How does a students country of birth effect their student lifestyle?
-
-```{r, results='asis'}
 # =========================
 # 4. Simplify country groups
 # =========================
@@ -70,6 +64,16 @@ survey <- survey |>
     country_of_birth == "USA" ~ "USA",
     TRUE ~ "Other"
   ))
+
+# Save a clean copy before RQ1 outlier filtering, so RQ2 can reuse it
+survey_clean <- survey
+```
+
+## Research Question 1
+
+### How does a students country of birth effect their student lifestyle?
+
+```{r, results='asis'}
 
 data_summary <- survey |>
   group_by(country_group) |>
@@ -140,43 +144,11 @@ Figure 1.2 illustrates a similar distribution across country groups in terms of 
 ### Is there a linear relationship between hours studyingand stress level among students at USyd and how may this relationship vary across different countries of birth?
 
 ```{r}
-library(tidyverse)
-library(ggplot2)
-library(plotly)
+# RQ2 uses the shared cleaned dataset (before RQ1 outlier filtering)
+survey <- survey_clean
 
-# loading in dataset 
-survey_dirty = read.csv("data1001_survey_data_2026S1-1.csv")
-
-# cleaning extracts 
-  survey = drop_na(survey_dirty)
-
-# extracting relevant columns 
-relevant_data = subset(
-  survey, 
-  select = c(
-              hours_studying, 
-              friends_count, stress, 
-              country_of_birth, 
-              country_of_birth_5_TEXT
-             )
-  )
-```
-
-```
-
-```{r}
-library(dbplyr)
-# seperating data by country (vector)
-country_group <- case_when(
-  survey$country_of_birth == "Australia" ~ "Australia",
-  survey$country_of_birth == "China" ~ "China",
-  survey$country_of_birth == "India" ~ "India",
-  survey$country_of_birth == "USA" ~ "USA",
-  TRUE ~ "Other"
-)
-# adding country vector into filtered dataset
-survey$country_group <- country_group
-countries <- unique(country_group)
+# country_group already exists from the shared data cleaning step
+countries <- unique(survey$country_group)
 # highest degree polynomial being tested 
 degree <- 5
 # Storing results (empty)
