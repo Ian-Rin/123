@@ -68,27 +68,29 @@ class TextPost(Post):
 
 class StoryPost(Post):
     def __init__(self, post_id, author, text, children):
+        # Delegate all validation and attribute assignment to Post —
+        # TextPost has no extra state beyond a different post_type.
         super().__init__(post_id, author, text)
+        # Override post_type after super() has set it to "Post".
         self.post_type = "StoryPost"
 
-        # children must be a list specifically — reject tuples, sets, and
-        # other iterables so the stored attribute behaves predictably.
+        # Spec requires a list specifically — reject tuples or other iterables even though they would seem compatible.
         if type(children) is not list:
             raise ValueError("children must be a list")
 
-        # Validate every child id against the same rule as Post.post_id,
-        # and forbid self-reference so a story cannot contain itself.
-        for child in children:
-            if type(child) is not str:
-                raise ValueError("children entries must be strings")
-            if len(child) != 10 or not all(c in "0123456789" for c in child):
-                raise ValueError(
-                    "children entries must be exactly 10 decimal digits"
-                )
-            if child == post_id:
-                raise ValueError("children must not contain this post's id")
+        for child_id in children:
+    if type(child_id) is not str or len(child_id) != 10 or not all(
+        c in "0123456789" for c in child_id
+    ):
+        raise ValueError(
+            "each entry in children must be a valid post_id"
+        )
+    if child_id == post_id:
+        raise ValueError(
+            "children must not contain this StoryPost's own post_id"
+        )
 
-        # Copy the list so later mutations of the caller's list do not
+        # Store a copy, not the original reference. Otherwise mutations to the caller's list after construction would leak into this StoryPost's internal state.
         # leak into this instance's state.
         self.children = list(children)
 
