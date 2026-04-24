@@ -93,8 +93,8 @@ class StoryPost(Post):
                     "children must not contain this StoryPost's own post_id"
                 )
 
-        # Store a copy, not the original reference. Otherwise mutations to the caller's list after construction would leak into this StoryPost's internal state.
-        # leak into this instance's state.
+        # Copy so later mutations of the caller's list don't leak into
+        # this instance's state.
         self.children = list(children)
 
     def __str__(self):
