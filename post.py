@@ -192,3 +192,74 @@ class StoryPost(Post):
                 # it would raise here is on a corrupted other_post whose
                 # children contained an invalid id or its own post_id.
                 self.add_child(child_id)
+
+
+# Keys whose values were corrupted and must be restored when read from
+# the archive. Spec currently only names `text`; keeping this as a set
+# makes it a one-line change if the spec expands later.
+_TEXT_KEYS = {"text"}
+
+
+def _decorrupt_text(value):
+    # Corruption flipped the parity of every ASCII letter's code point:
+    # even code points were decremented by 1, odd ones incremented by 1.
+    # The inverse is the same operation — applying the parity flip again
+    # restores the original letter. Non-letters pass through untouched,
+    # which preserves digits, punctuation, spaces, and emoji verbatim.
+    out = []
+    for ch in value:
+        cp = ord(ch)
+        if ("a" <= ch <= "z") or ("A" <= ch <= "Z"):
+            if cp % 2 == 0:
+                out.append(chr(cp - 1))
+            else:
+                out.append(chr(cp + 1))
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+def load_raw_records(filepath):
+    # Spec: on any failure to open, surface FileNotFoundError. `open`
+    # already raises that for missing files; we only need to let it
+    # propagate. UTF-8 is explicitly guaranteed by the spec.
+    with open(filepath, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    records = []
+    for raw_line in lines:
+        # Strip only the trailing newline — interior spaces inside a
+        # value must survive. `rstrip("\n")` alone would leave a '\r'
+        # from CRLF files, so strip both line-ending chars.
+        line = raw_line.rstrip("\n").rstrip("\r")
+
+        # Empty and comment lines are skipped. Use lstrip for the
+        # comment check so lines like "   # note" are also treated as
+        # comments — the spec wording ("beginning with #") is lenient
+        # and this matches typical text-config conventions.
+        stripped = line.lstrip()
+        if stripped == "" or stripped.startswith("#"):
+            continue
+
+        record = {}
+        # Key/value pairs are ;-separated. We split the whole line and
+        # then split each pair on the FIRST '=' only, so '=' inside a
+        # value survives (e.g. "text=a=b" → key "text", value "a=b").
+        for pair in line.split(";"):
+            if "=" not in pair:
+                raise ValueError(
+                    "invalid key-value pair (missing '='): "
+                    f"{pair!r}"
+                )
+            key, value = pair.split("=", 1)
+            # Keys: trim surrounding whitespace per spec.
+            key = key.strip()
+            # Values: preserve spaces verbatim — do NOT strip. Only
+            # text-typed values get the decorruption pass applied.
+            if key in _TEXT_KEYS:
+                value = _decorrupt_text(value)
+            record[key] = value
+
+        records.append(record)
+
+    return records
