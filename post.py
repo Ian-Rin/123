@@ -68,27 +68,30 @@ class TextPost(Post):
 
 class StoryPost(Post):
     def __init__(self, post_id, author, text, children):
-        # Delegate all validation and attribute assignment to Post —
-        # TextPost has no extra state beyond a different post_type.
+        # Validate and assign base fields via Post.__init__ first, so
+        # any ValueError from base validation fires before we touch
+        # children.
         super().__init__(post_id, author, text)
-        # Override post_type after super() has set it to "Post".
         self.post_type = "StoryPost"
 
-        # Spec requires a list specifically — reject tuples or other iterables even though they would seem compatible.
+        # Spec requires a list specifically — reject tuples or other
+        # iterables even though they would seem compatible.
         if type(children) is not list:
             raise ValueError("children must be a list")
 
+        # Each entry must itself be a valid post_id, and none of them
+        # can equal this StoryPost's own id (no self-referential story).
         for child_id in children:
-    if type(child_id) is not str or len(child_id) != 10 or not all(
-        c in "0123456789" for c in child_id
-    ):
-        raise ValueError(
-            "each entry in children must be a valid post_id"
-        )
-    if child_id == post_id:
-        raise ValueError(
-            "children must not contain this StoryPost's own post_id"
-        )
+            if type(child_id) is not str or len(child_id) != 10 or not all(
+                c in "0123456789" for c in child_id
+            ):
+                raise ValueError(
+                    "each entry in children must be a valid post_id"
+                )
+            if child_id == post_id:
+                raise ValueError(
+                    "children must not contain this StoryPost's own post_id"
+                )
 
         # Store a copy, not the original reference. Otherwise mutations to the caller's list after construction would leak into this StoryPost's internal state.
         # leak into this instance's state.
