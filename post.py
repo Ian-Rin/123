@@ -59,6 +59,47 @@ class Post:
             f"-> {self.likes} likes"
         )
 
+    def __eq__(self, other):
+        # Spec: raise TypeError when compared against a non-Post, rather
+        # than the usual NotImplemented dance. Sub-type does not matter —
+        # two Posts with the same post_id are equal even if one is a
+        # TextPost and the other a StoryPost.
+        if not isinstance(other, Post):
+            raise TypeError(
+                "Post can only be compared with another Post instance"
+            )
+        return self.post_id == other.post_id
+
+    def add_to_likes(self, n=1):
+        # `type(n) is not int` rejects bool too (type(True) is bool, not
+        # int), which matches the stricter checks used elsewhere. Reject
+        # before touching state so a bad call leaves likes unchanged.
+        if type(n) is not int or n < 0:
+            raise ValueError("n must be a non-negative int")
+        self.likes += n
+
+    def merge_in(self, other_post):
+        # Type gate first: equality below would raise TypeError on a
+        # non-Post, but the spec wants that specific error surface here
+        # too, so checking explicitly keeps the message meaningful.
+        if not isinstance(other_post, Post):
+            raise TypeError("other_post must be a Post instance")
+        # Use == (now post_id-based) to decide mergeability. Sub-type
+        # mismatch is allowed per spec; only post_id matters.
+        if self != other_post:
+            raise ValueError("posts must be equal (same post_id) to merge")
+
+        # Likes simply accumulate. We trust other_post.likes is already
+        # in a valid state; the spec doesn't ask us to re-validate it.
+        self.likes += other_post.likes
+
+        # Keep the longer text; on tie, retain this instance's text.
+        if len(other_post.text) > len(self.text):
+            self.text = other_post.text
+
+        # post_type, post_id, author, timestamp: unchanged on this side.
+        # StoryPost handles child merging in its override.
+
 
 class TextPost(Post):
     def __init__(self, post_id, author, text):
@@ -105,3 +146,49 @@ class StoryPost(Post):
             f"Contains: {self.children}\n"
             f"-> {self.likes} likes"
         )
+
+    def add_child(self, child_post_id, position=-1):
+        # Validate id format first — same rules as Post.__init__ uses for
+        # post_id so the children list stays internally consistent.
+        if type(child_post_id) is not str or len(child_post_id) != 10 or not all(
+            c in "0123456789" for c in child_post_id
+        ):
+            raise ValueError(
+                "child_post_id must be a 10-digit post_id string"
+            )
+        # A StoryPost cannot reference itself as its own child.
+        if child_post_id == self.post_id:
+            raise ValueError(
+                "child_post_id must not equal this StoryPost's post_id"
+            )
+
+        # Position must be a real int (reject bool). -1 is the sentinel
+        # for append; otherwise it must be a valid insertion index, i.e.
+        # 0..len(children) inclusive (len is valid for insert at end).
+        if type(position) is not int:
+            raise ValueError("position must be an int")
+        if position != -1 and not (0 <= position <= len(self.children)):
+            raise ValueError("position is out of range")
+
+        # Duplicate guard runs AFTER validation so bad inputs still error
+        # out rather than silently short-circuiting on a duplicate.
+        if child_post_id in self.children:
+            return
+
+        if position == -1:
+            self.children.append(child_post_id)
+        else:
+            self.children.insert(position, child_post_id)
+
+    def merge_in(self, other_post):
+        # Delegate base-field merge (type check, likes, text) to Post.
+        super().merge_in(other_post)
+        # Children only merge when both sides are StoryPosts; spec says
+        # sub-type is ignored for equality but child merging is
+        # conditional on both being stories.
+        if isinstance(other_post, StoryPost):
+            for child_id in other_post.children:
+                # add_child handles dedup and validation; the only way
+                # it would raise here is on a corrupted other_post whose
+                # children contained an invalid id or its own post_id.
+                self.add_child(child_id)
